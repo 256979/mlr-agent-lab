@@ -1,0 +1,48 @@
+# Secrets — this repository is public. Never commit credentials.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*_rsa
+*_ed25519
+credentials.json
+secrets.*
+
+# Claude Code config
+.claude/
+
+# Python environments
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Datasets and model weights — generate or fetch these locally
+data/
+datasets/
+*.csv
+*.tsv
+*.parquet
+*.json.gz
+*.npy
+*.npz
+*.pkl
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.h5
+*.bin
+checkpoints/
+wandb/
+
+# OS / editor noise
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.DS_Store

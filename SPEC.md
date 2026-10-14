@@ -1,27 +1,27 @@
-# SPEC.md — leaves.csv classification (first draft)
+# SPEC.md — leaves.csv classification
 
-Status: draft, being refined through interview. Decisions marked OPEN below.
+Status: final draft after interview. All previously-OPEN decisions are
+resolved; the resolution is stated inline.
 
 # Goal
 
 Given two numbers about a leaf — its height and its width — say which tree it
 came from: maple, cherry or walnut. The result should answer, in numbers: how
-well can this be predicted at all, which model does it best, and is the best
-model actually better than a trivial baseline. Just as important: whether the
-messiness of this particular file (three merged sources, repeated rows,
-probably mislabelled rows) changes what "best" means.
+well can this be predicted at all, which of the compared models does it best,
+and is the best model actually better than a trivial baseline. Just as
+important: whether the messiness of this particular file (three merged
+sources, repeated rows, probably mislabelled rows) changes what "best" means.
 
 # Context
 
 `data/leaves.csv` — 518 rows, 3 columns: `Leaf height`, `Leaf width`
-(units unstated in the file; the 2.5–29.7 range reads as centimetres, OPEN),
-`Tree type` with exactly three values: maple (216), cherry (173), walnut
-(129). No missing or non-numeric values. Units do not affect any model here
-(both columns share a scale and every model is scale-invariant after
-standardising), but they belong in the report.
+(centimetres; not stated in the file, but 2.5–29.7 matches real leaf sizes in
+cm — the values would be insect-sized in mm), `Tree type` with exactly three
+values: maple (216), cherry (173), walnut (129). No missing or non-numeric
+values.
 
-The file is not a single clean measurement set. Findings from the audit
-(`analyze_leaves.py`, committed):
+Provenance: provided with the lecture. No further source information is
+known, which is why the file's internal structure has to speak for itself:
 
 - **Three sources pasted together.** Decimal precision clusters by row range:
   lines 2–101 have 1–2 decimals, 102–303 have 3–6, 304–519 have 1.
@@ -30,10 +30,10 @@ The file is not a single clean measurement set. Findings from the audit
   precision and once rounded (e.g. `8.99,4.96` vs `9.0,5.0`).
 - **Suspect labels.** 11 rows have a width/height ratio typical of a
   different type; maple's median width (14.7) exceeds its median height
-  (13.0), unlike the other types — possibly a swapped column in that source.
+  (13.0), unlike the other types — possibly a swapped column in one source.
 - **Pooling hurts.** Within-type correlation between height and width is
   r = 0.67–0.80, but r = 0.59 over all rows — the classes occupy different
-  regions, so analyses must be per-class or model the class explicitly.
+  regions, so analyses are per-class or model the class explicitly.
 
 Separable in 2-D but overlapping at the edges: walnut is tall and narrow,
 cherry small and narrow, maple large and roughly square.
@@ -45,48 +45,58 @@ cherry small and narrow, maple large and roughly square.
 
 - **Test set**: created by `split_leaves.py`, stratified 80/20, **split by
   duplicate group** so no leaf (exact or same-leaf-rounded) ever appears on
-  both sides — a naive row split leaked in 200/200 tested seeds. Seed 0
-  unless a sweep needs others. The test set is opened only for the final
-  number; all model choice happens on train (with internal validation).
-- **Duplicates**: kept in train (they carry class weight honestly) — the
-  `--dedupe` variant must be reported as a robustness check, not as the main
-  result. OPEN: confirm this is the intended reading.
-- **Models**: comparison of a small ladder — majority/nearest-basic baseline,
-  logistic regression (multinomial), k-nearest-neighbours, a decision tree,
-  and one ensemble (random forest). OPEN: confirm the ladder; a simple
-  per-class Gaussian or LDA may replace logistic regression.
-- **Environment**: plain Python on this machine, currently **no pandas,
-  numpy, matplotlib or sklearn installed**. Either models are implemented in
-  the stdlib or we `pip install` — that decision is open and shapes
-  everything. The data itself is small enough that pure Python is feasible.
-- **Hyperparameters**: k in {1,3,5,7,9} for kNN; tree max_depth {2,3,4,None};
-  logistic C over a log grid if sklearn is used; forest n_estimators fixed
-  small {64} with max_features swept. Tuning on **training data only**, via
-  stratified 5-fold CV inside train. OPEN: confirm CV scheme.
-- **Budget**: everything runs in seconds to a couple of minutes on a laptop;
-  full sweep + final evaluation in under ~10 minutes wall time, fixed seeds,
-  fully deterministic.
-- **Metric for choosing the model**: OPEN — macro-F1 proposed (classes are
-  imbalanced 42/33/25% and all three classes matter equally), accuracy as
-  reporting companion. Final numbers reported on test exactly once per model.
+  both sides — a naive row split leaked in 200/200 tested seeds. Seed 0. The
+  test set is opened exactly once per model, after all choices are frozen;
+  every model choice happens on train with internal validation.
+- **Duplicates**: the 26 redundant copies stay in train — the group-safe
+  split means they cannot leak, and they carry class weight as given. The
+  `--dedupe` variant (482 unique leaves) is reported as a robustness check on
+  the ranking, not as the main result.
+- **Suspect labels**: the 11 shape-mismatched rows stay in the main
+  experiment; a robustness run excluding them quantifies what label noise
+  costs. Nothing is silently deleted.
+- **Models** (fixed ladder): majority baseline, multinomial logistic
+  regression, k-nearest-neighbours, decision tree, random forest.
+- **Environment**: scikit-learn via pip (this machine has none of
+  pandas/numpy/sklearn yet). `requirements.txt` pins versions so a classmate
+  rerun is comparable. Data is small (518×2), so runtime is never the
+  bottleneck.
+- **Hyperparameters**, tuned by **stratified 5-fold CV inside train only**:
+  kNN k ∈ {1,3,5,7,9}; logistic C over a log grid (1e-3…1e3); tree
+  max_depth ∈ {2,3,4,None}; forest n_estimators = 64 with max_features swept.
+  Feature standardisation is folded into each CV pipeline (fit on train
+  folds, applied to validation folds) so it cannot leak.
+- **Budget**: deterministic (fixed seeds everywhere), full sweep + single
+  test evaluation + figures + report regeneration in under ~10 minutes wall
+  time on a laptop.
+- **Metric that chooses the model**: **macro-F1** on CV (classes are
+  42/33/25% and all three matter equally). Accuracy is reported alongside
+  every number but never decides. Final test numbers: macro-F1, accuracy,
+  per-class recall, and the confusion matrix for the chosen model.
 
 # Done when
 
-- `SPEC.md` — this file, no OPEN markers left.
-- `split_leaves.py`, `analyze_leaves.py` — already committed; still run clean.
-- `train.py` (or notebook) — trains the model ladder, does CV tuning on train,
-  writes:
-  - `results/results.csv` — one row per (model, hyperparameter setting): CV
-    mean/std of the chosen metric;
-  - `results/final.csv` — one row per model: chosen config, CV metric, and the
-    single test-set metric (chosen metric + accuracy + full confusion matrix);
-  - `results/report.md` — 1–2 pages: which model won, by how much over the
-    baseline, whether duplicates or suspect labels changed the ranking
-    (robustness runs), and the honest caveats.
-- A classmate can reproduce everything with:
-  `python split_leaves.py && python train.py` — fixed seeds, same numbers,
-  start to finish in ~10 minutes.
-- Sanity checks present in the report: baseline beats chance, test set
-  verified duplicate-free against train (the check `split_leaves.py` already
-  prints), and per-class recall for all three classes shown so no class is
-  being quietly sacrificed.
+- `SPEC.md` — this file, final.
+- `analyze_leaves.py`, `split_leaves.py` — committed, still run clean.
+- `requirements.txt` — pinned scikit-learn (and numpy) versions.
+- `train.py` — trains the ladder, CV-tunes on train, opens test once, writes:
+  - `results/results.csv` — one row per (model, setting): CV macro-F1
+    mean/std, CV accuracy;
+  - `results/final.csv` — one row per model: chosen config, CV macro-F1, and
+    the single test-set macro-F1 + accuracy + per-class recall;
+  - `results/confusion_matrix.csv` — chosen model, test set;
+  - `results/report.md` — 1–2 pages: which model won, margin over baseline,
+    robustness runs (dedupe variant; suspect-labels-excluded variant),
+    honest caveats (merged sources, unverified labels, unknown provenance).
+  - `results/fig_scatter.svg` (already produced by analyze_leaves.py; copied
+    or regenerated) and `results/fig_confusion.svg`.
+- `slides.md` — ~6-slide markdown deck: question, data, method, results,
+  robustness, caveats.
+- A classmate reproduces everything with:
+  `pip install -r requirements.txt && python split_leaves.py && python train.py`
+  — fixed seeds, identical numbers, ~10 minutes start to finish.
+- Sanity checks present in the report: baseline beats chance; the
+  duplicate-free split check (printed by `split_leaves.py`) quoted; per-class
+  recall for all three classes shown so no class is quietly sacrificed; the
+  dedupe and suspect-label robustness runs included with their verdicts on
+  whether the ranking changed.
